@@ -27,6 +27,7 @@ public static class Program
 
         var options = parseResult.Options!;
         var inspector = new PdfDocumentInspector();
+        var editor = new PdfEditor();
 
         try
         {
@@ -36,6 +37,26 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(options.OutputPath))
             {
                 SaveReport(report, options.OutputPath!);
+            }
+
+            if (options.EditPathId.HasValue || options.EditStrokeColor != null || options.NewLineStart.HasValue || options.NewLineEnd.HasValue)
+            {
+                if (string.IsNullOrWhiteSpace(options.OutputPdfPath))
+                {
+                    Console.Error.WriteLine("Editing requires --output-pdf to write the modified document.");
+                    return 1;
+                }
+
+                editor.RewriteWithEdits(
+                    options.PdfPath,
+                    options.OutputPdfPath!,
+                    options.EditPageNumber,
+                    options.EditPathId,
+                    options.EditStrokeColor,
+                    options.NewLineStart,
+                    options.NewLineEnd);
+
+                Console.WriteLine($"Wrote edited PDF to {options.OutputPdfPath}");
             }
 
             return 0;
@@ -115,7 +136,13 @@ public static class Program
         IReadOnlyCollection<int>? Pages,
         string? OutputPath,
         BoundingBoxFilter? VectorBounds,
-        ColorFilter? StrokeColorFilter)
+        ColorFilter? StrokeColorFilter,
+        int? EditPageNumber,
+        int? EditPathId,
+        string? EditStrokeColor,
+        (double x, double y)? NewLineStart,
+        (double x, double y)? NewLineEnd,
+        string? OutputPdfPath)
     {
         public static ParseResult Parse(string[] args)
         {
@@ -124,6 +151,12 @@ public static class Program
             BoundingBoxFilter? vectorBounds = null;
             ColorFilter? strokeColorFilter = null;
             IReadOnlyCollection<int>? pages = null;
+            int? editPage = null;
+            int? editPathId = null;
+            string? editStroke = null;
+            (double x, double y)? newStart = null;
+            (double x, double y)? newEnd = null;
+            string? outputPdf = null;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -154,6 +187,14 @@ public static class Program
 
                         outputPath = args[++i];
                         break;
+                    case "--output-pdf":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--output-pdf requires a file path.");
+                        }
+
+                        outputPdf = args[++i];
+                        break;
                     case "--vector-bbox":
                         if (i + 1 >= args.Length)
                         {
@@ -178,6 +219,56 @@ public static class Program
                         }
 
                         break;
+                    case "--edit-page":
+                        if (i + 1 >= args.Length || !int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var editPageNumber) || editPageNumber <= 0)
+                        {
+                            return new ParseResult(false, null, "--edit-page requires a positive integer page number.");
+                        }
+
+                        editPage = editPageNumber;
+                        break;
+                    case "--edit-path":
+                        if (i + 1 >= args.Length || !int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out var pathId) || pathId < 0)
+                        {
+                            return new ParseResult(false, null, "--edit-path requires a non-negative integer path id.");
+                        }
+
+                        editPathId = pathId;
+                        break;
+                    case "--edit-stroke-color":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--edit-stroke-color requires a hex color like #00ff00.");
+                        }
+
+                        editStroke = args[++i];
+                        break;
+                    case "--edit-line-start":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--edit-line-start requires x,y coordinates.");
+                        }
+
+                        string? startError;
+                        if (!TryParsePoint(args[++i], out newStart, out startError))
+                        {
+                            return new ParseResult(false, null, startError ?? "--edit-line-start requires x,y coordinates.");
+                        }
+
+                        break;
+                    case "--edit-line-end":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--edit-line-end requires x,y coordinates.");
+                        }
+
+                        string? endError;
+                        if (!TryParsePoint(args[++i], out newEnd, out endError))
+                        {
+                            return new ParseResult(false, null, endError ?? "--edit-line-end requires x,y coordinates.");
+                        }
+
+                        break;
                     default:
                         if (value.StartsWith("--", StringComparison.Ordinal))
                         {
@@ -194,8 +285,26 @@ public static class Program
                 return new ParseResult(false, null, "Please provide a PDF file path.");
             }
 
-            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter);
+            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf);
             return new ParseResult(true, options, null);
+        }
+
+        private static bool TryParsePoint(string value, out (double x, double y)? point, out string? error)
+        {
+            point = null;
+            error = null;
+
+            var parts = value.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2 ||
+                !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ||
+                !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+            {
+                error = "Points must be in the form x,y.";
+                return false;
+            }
+
+            point = (x, y);
+            return true;
         }
 
         private static IReadOnlyCollection<int>? ParsePages(string value, out string? error)

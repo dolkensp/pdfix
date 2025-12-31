@@ -227,7 +227,7 @@ public sealed class PdfDocumentInspector
     }
 
     private static BoundingBox ToBoundingBox(PdfRectangle rectangle) =>
-        new(rectangle.Left, rectangle.Bottom, rectangle.Width, rectangle.Height);
+        GeometryConverters.ToBoundingBox(rectangle);
 
     private static string FormatPoint(PdfPoint point) => $"({point.X:0.###},{point.Y:0.###})";
 }
