@@ -18,6 +18,7 @@ Options:
 - `--vector-bbox minX,minY,maxX,maxY` – only include vector paths whose bounds intersect the provided rectangle (PDF coordinate space).
 - `--line-color #ffcccc` – only include stroked vector paths that match the provided hex color (RGB, with a small tolerance).
 - `--edit-page <n> --edit-path <id> --edit-stroke-color #00ff00 --edit-line-start x,y --edit-line-end x,y --output-pdf edited.pdf` – rewrite the PDF with an updated path (stroke color and optional endpoints). Path IDs match the per-page index from the inspection output.
+- `--debug-randomize-lines --output-pdf edited.pdf` – overlay every stroked path with a random color and print the page/path→hex mapping.
 - `--output <file>` – write the full JSON report to a file.
 
 ## Output structure

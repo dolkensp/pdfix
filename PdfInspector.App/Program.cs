@@ -31,6 +31,18 @@ public static class Program
 
         try
         {
+            if (options.DebugRandomizeLines)
+            {
+                if (string.IsNullOrWhiteSpace(options.OutputPdfPath))
+                {
+                    Console.Error.WriteLine("Debug randomize requires --output-pdf to write the modified document.");
+                    return 1;
+                }
+
+                editor.RandomizeLineColors(options.PdfPath, options.OutputPdfPath!);
+                return 0;
+            }
+
             var report = inspector.Inspect(options.PdfPath, options.Pages, options.VectorBounds, options.StrokeColorFilter);
             RenderSummary(report, options);
 
@@ -142,7 +154,8 @@ public static class Program
         string? EditStrokeColor,
         (double x, double y)? NewLineStart,
         (double x, double y)? NewLineEnd,
-        string? OutputPdfPath)
+        string? OutputPdfPath,
+        bool DebugRandomizeLines)
     {
         public static ParseResult Parse(string[] args)
         {
@@ -157,6 +170,7 @@ public static class Program
             (double x, double y)? newStart = null;
             (double x, double y)? newEnd = null;
             string? outputPdf = null;
+            var debugRandomize = false;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -269,6 +283,9 @@ public static class Program
                         }
 
                         break;
+                    case "--debug-randomize-lines":
+                        debugRandomize = true;
+                        break;
                     default:
                         if (value.StartsWith("--", StringComparison.Ordinal))
                         {
@@ -285,7 +302,7 @@ public static class Program
                 return new ParseResult(false, null, "Please provide a PDF file path.");
             }
 
-            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf);
+            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf, debugRandomize);
             return new ParseResult(true, options, null);
         }
 

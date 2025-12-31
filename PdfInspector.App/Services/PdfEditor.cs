@@ -14,11 +14,11 @@ using PdfSharpCore.Pdf.IO;
 namespace PdfInspector.App.Services;
 
 public sealed class PdfEditor
-{
-    public void RewriteWithEdits(
-        string inputPath,
-        string outputPath,
-        int? targetPage,
+    {
+        public void RewriteWithEdits(
+            string inputPath,
+            string outputPath,
+            int? targetPage,
         int? targetPathId,
         string? newStrokeColorHex,
         (double x, double y)? newStart,
@@ -63,6 +63,44 @@ public sealed class PdfEditor
 
             using var gfx = XGraphics.FromPdfPage(sharpPage, XGraphicsPdfPageOptions.Append);
             DrawOverlayLine(gfx, sharpPage.Height, finalStart, finalEnd, strokeHex, path);
+        }
+
+        target.Save(outputPath);
+    }
+
+    public void RandomizeLineColors(string inputPath, string outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            throw new ArgumentException("Output path is required for writing.", nameof(outputPath));
+        }
+
+        using var source = UglyToadPdf.PdfDocument.Open(inputPath);
+        using var target = PdfReader.Open(inputPath, PdfDocumentOpenMode.Modify);
+        var random = new Random(1234);
+
+        for (var pageNumber = 1; pageNumber <= source.NumberOfPages; pageNumber++)
+        {
+            var pigPage = source.GetPage(pageNumber);
+            var sharpPage = target.Pages[pageNumber - 1];
+            var paths = pigPage.ExperimentalAccess.Paths?.ToList() ?? new List<PdfPath>();
+
+            using var gfx = XGraphics.FromPdfPage(sharpPage, XGraphicsPdfPageOptions.Append);
+
+            for (var i = 0; i < paths.Count; i++)
+            {
+                var path = paths[i];
+                var strokeHex = RandomHex(random);
+                var endpoints = GetFirstLineEndpoints(path);
+                if (endpoints is null)
+                {
+                    continue;
+                }
+
+                var (start, end) = endpoints.Value;
+                DrawOverlayLine(gfx, sharpPage.Height, start, end, strokeHex, path);
+                Console.WriteLine($"Page {pageNumber}, Path {i}, Stroke {strokeHex}");
+            }
         }
 
         target.Save(outputPath);
@@ -140,6 +178,14 @@ public sealed class PdfEditor
 
     private static string NormalizeHex(string hex) =>
         hex.StartsWith("#", StringComparison.Ordinal) ? hex : $"#{hex}";
+
+    private static string RandomHex(Random random)
+    {
+        var r = random.Next(0, 256);
+        var g = random.Next(0, 256);
+        var b = random.Next(0, 256);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
 
     private static XPoint TransformPoint(PdfPoint point, double pageHeight) =>
         new(point.X, pageHeight - point.Y);
