@@ -48,4 +48,21 @@ public sealed class ColorFilter
 
     private static byte ToByte(double channel) =>
         (byte)Math.Round(Math.Max(0, Math.Min(1, channel)) * 255);
+
+    public bool MatchesHex(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return false;
+        }
+
+        if (!ColorUtilities.TryParseHex(hex, out var rgb, out _))
+        {
+            return false;
+        }
+
+        return WithinTolerance(rgb.r, target.r)
+            && WithinTolerance(rgb.g, target.g)
+            && WithinTolerance(rgb.b, target.b);
+    }
 }

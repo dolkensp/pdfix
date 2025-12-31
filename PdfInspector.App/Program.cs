@@ -44,6 +44,12 @@ public static class Program
             }
 
             var report = inspector.Inspect(options.PdfPath, options.Pages, options.VectorBounds, options.StrokeColorFilter);
+
+            if (options.FindColor != null)
+            {
+                RunColorSearch(report, options.FindColor);
+            }
+
             RenderSummary(report, options);
 
             if (!string.IsNullOrWhiteSpace(options.OutputPath))
@@ -141,6 +147,40 @@ public static class Program
         Console.WriteLine("Usage: dotnet run --project PdfInspector.App -- <pdf path> [--pages 1,3-4] [--vector-bbox minX,minY,maxX,maxY] [--output components.json]");
     }
 
+    private static void RunColorSearch(DocumentComponents report, ColorFilter filter)
+    {
+        Console.WriteLine($"Searching for color: {filter}");
+
+        foreach (var page in report.Pages)
+        {
+            var pathMatches = page.VectorPaths
+                .Where(p => filter.MatchesHex(p.StrokeColorHex) || filter.MatchesHex(p.FillColorHex))
+                .Select(p => p.Index)
+                .ToList();
+
+            var textMatches = page.Words
+                .Where(t => filter.MatchesHex(t.FillColorHex) || filter.MatchesHex(t.StrokeColorHex))
+                .Select(t => t.Text)
+                .ToList();
+
+            if (!pathMatches.Any() && !textMatches.Any())
+            {
+                continue;
+            }
+
+            Console.WriteLine($"Page {page.PageNumber}:");
+            if (pathMatches.Any())
+            {
+                Console.WriteLine($"  Paths (by index): {string.Join(", ", pathMatches)}");
+            }
+
+            if (textMatches.Any())
+            {
+                Console.WriteLine($"  Text fragments: {string.Join(" | ", textMatches.Take(10))}{(textMatches.Count > 10 ? " ..." : string.Empty)}");
+            }
+        }
+    }
+
     private sealed record ParseResult(bool IsSuccess, CommandLineOptions? Options, string? Error);
 
     private sealed record CommandLineOptions(
@@ -155,7 +195,8 @@ public static class Program
         (double x, double y)? NewLineStart,
         (double x, double y)? NewLineEnd,
         string? OutputPdfPath,
-        bool DebugRandomizeLines)
+        bool DebugRandomizeLines,
+        ColorFilter? FindColor)
     {
         public static ParseResult Parse(string[] args)
         {
@@ -171,6 +212,7 @@ public static class Program
             (double x, double y)? newEnd = null;
             string? outputPdf = null;
             var debugRandomize = false;
+            ColorFilter? findColor = null;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -286,6 +328,18 @@ public static class Program
                     case "--debug-randomize-lines":
                         debugRandomize = true;
                         break;
+                    case "--find-color":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--find-color requires a hex color like #ffcccc.");
+                        }
+
+                        if (!ColorFilter.TryParse(args[++i], out findColor, out var findError))
+                        {
+                            return new ParseResult(false, null, findError);
+                        }
+
+                        break;
                     default:
                         if (value.StartsWith("--", StringComparison.Ordinal))
                         {
@@ -302,7 +356,7 @@ public static class Program
                 return new ParseResult(false, null, "Please provide a PDF file path.");
             }
 
-            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf, debugRandomize);
+            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf, debugRandomize, findColor);
             return new ParseResult(true, options, null);
         }
 

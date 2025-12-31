@@ -55,7 +55,8 @@ public sealed class PdfEditor
                 continue;
             }
 
-            var strokeHex = NormalizeHex(newStrokeColorHex ?? ColorUtilities.ToHex(path.StrokeColor));
+            var strokeHex = newStrokeColorHex ?? ColorUtilities.ToHex(path.StrokeColor);
+            strokeHex = NormalizeHex(strokeHex ?? "#000000");
             var (start, end) = endpoints.Value;
 
             var finalStart = newStart.HasValue ? GeometryConverters.ToPoint(newStart.Value) : start;

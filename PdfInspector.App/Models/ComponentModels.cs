@@ -21,7 +21,8 @@ public record PdfMetadata(
     string? CreationDate,
     string? ModificationDate);
 
-public record TextComponent(string Text, BoundingBox Bounds, string? FontName, double FontSize, string Orientation);
+public record TextComponent(string Text, BoundingBox Bounds, string? FontName, double FontSize, string Orientation, string? FillColorHex, string? StrokeColorHex);
+public record ColoredTextComponent(string Text, BoundingBox Bounds, string? FontName, double FontSize, string Orientation, string? FillColorHex, string? StrokeColorHex);
 
 public record ImageComponent(
     BoundingBox Bounds,

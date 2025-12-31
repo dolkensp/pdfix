@@ -98,8 +98,15 @@ public sealed class PdfDocumentInspector
             var bounds = ToBoundingBox(word.BoundingBox);
             var fontSize = word.Letters.Count > 0 ? word.Letters.Average(l => l.FontSize) : 0;
             var fontName = word.Letters.Count > 0 ? word.Letters[0].FontName : null;
+            string? fillHex = null;
+            string? strokeHex = null;
+            if (word.Letters.Count > 0)
+            {
+                fillHex = ColorUtilities.ToHex(word.Letters[0].FillColor);
+                strokeHex = ColorUtilities.ToHex(word.Letters[0].StrokeColor);
+            }
 
-            result.Add(new TextComponent(word.Text, bounds, fontName, fontSize, word.TextOrientation.ToString()));
+            result.Add(new TextComponent(word.Text, bounds, fontName, fontSize, word.TextOrientation.ToString(), fillHex, strokeHex));
         }
 
         return result;
