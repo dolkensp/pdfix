@@ -9,6 +9,7 @@ using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Graphics;
 using PdfSharpCore.Drawing;
 using PdfSharpCore.Pdf;
+using PdfSharpCore.Pdf.IO;
 
 namespace PdfInspector.App.Services;
 
@@ -29,127 +30,79 @@ public sealed class PdfEditor
         }
 
         using var source = UglyToadPdf.PdfDocument.Open(inputPath);
-        using var target = new PdfDocument();
+        using var target = PdfReader.Open(inputPath, PdfDocumentOpenMode.Modify);
 
         for (var pageNumber = 1; pageNumber <= source.NumberOfPages; pageNumber++)
         {
-            var page = source.GetPage(pageNumber);
-            var pdfPage = target.AddPage();
-            pdfPage.Width = page.Width;
-            pdfPage.Height = page.Height;
+            var pigPage = source.GetPage(pageNumber);
+            var sharpPage = target.Pages[pageNumber - 1];
 
-            using var gfx = XGraphics.FromPdfPage(pdfPage);
-
-            var paths = page.ExperimentalAccess.Paths?.ToList() ?? new List<PdfPath>();
-            for (var i = 0; i < paths.Count; i++)
+            if (targetPage != pageNumber)
             {
-                var path = paths[i];
-                var subpaths = new List<IReadOnlyList<PdfSubpath.IPathCommand>>();
-                foreach (var subpath in path)
-                {
-                    subpaths.Add(subpath.Commands);
-                }
-                var strokeHex = ColorUtilities.ToHex(path.StrokeColor);
-                var fillHex = ColorUtilities.ToHex(path.FillColor);
-
-                if (targetPage == pageNumber && targetPathId == i)
-                {
-                    if (newStrokeColorHex != null)
-                    {
-                        strokeHex = NormalizeHex(newStrokeColorHex);
-                    }
-
-                    if (newStart.HasValue && newEnd.HasValue)
-                    {
-                        subpaths = AdjustCommands(subpaths, newStart.Value, newEnd.Value);
-                    }
-                }
-
-                DrawPath(gfx, subpaths, path, strokeHex, fillHex);
+                continue;
             }
+
+            var paths = pigPage.ExperimentalAccess.Paths?.ToList() ?? new List<PdfPath>();
+            if (targetPathId is null || targetPathId < 0 || targetPathId >= paths.Count)
+            {
+                continue;
+            }
+
+            var path = paths[targetPathId.Value];
+            var endpoints = GetFirstLineEndpoints(path);
+            if (endpoints is null)
+            {
+                continue;
+            }
+
+            var strokeHex = NormalizeHex(newStrokeColorHex ?? ColorUtilities.ToHex(path.StrokeColor));
+            var (start, end) = endpoints.Value;
+
+            var finalStart = newStart.HasValue ? GeometryConverters.ToPoint(newStart.Value) : start;
+            var finalEnd = newEnd.HasValue ? GeometryConverters.ToPoint(newEnd.Value) : end;
+
+            using var gfx = XGraphics.FromPdfPage(sharpPage, XGraphicsPdfPageOptions.Append);
+            DrawOverlayLine(gfx, sharpPage.Height, finalStart, finalEnd, strokeHex, path);
         }
 
         target.Save(outputPath);
     }
 
-    private static List<IReadOnlyList<PdfSubpath.IPathCommand>> AdjustCommands(
-        List<IReadOnlyList<PdfSubpath.IPathCommand>> subpaths,
-        (double x, double y) newStart,
-        (double x, double y) newEnd)
+    private static (PdfPoint start, PdfPoint end)? GetFirstLineEndpoints(PdfPath path)
     {
-        var updatedSubpaths = new List<IReadOnlyList<PdfSubpath.IPathCommand>>(subpaths.Count);
-        var applied = false;
-        foreach (var subpathCommands in subpaths)
+        foreach (var subpath in path)
         {
-            if (!applied)
-            {
-                var adjusted = GeometryConverters.AdjustLineEndpoints(subpathCommands, GeometryConverters.ToPoint(newStart), GeometryConverters.ToPoint(newEnd));
-                updatedSubpaths.Add(adjusted.ToList());
-                applied = true;
-                continue;
-            }
-
-            updatedSubpaths.Add(subpathCommands);
-        }
-        return updatedSubpaths;
-    }
-
-    private static void DrawPath(
-        XGraphics gfx,
-        IReadOnlyList<IReadOnlyList<PdfSubpath.IPathCommand>> subpaths,
-        PdfPath sourcePath,
-        string? strokeHex,
-        string? fillHex)
-    {
-        var xPath = new XGraphicsPath();
-        foreach (var subpath in subpaths)
-        {
-            var started = false;
-            XPoint start = default;
-            foreach (var command in subpath)
+            PdfPoint? start = null;
+            foreach (var command in subpath.Commands)
             {
                 switch (command)
                 {
                     case PdfSubpath.Move move:
-                        start = ToXPoint(move.Location);
-                        started = true;
+                        start = move.Location;
                         break;
+                    case PdfSubpath.Line line when start != null:
+                        return ((start.Value, line.To));
                     case PdfSubpath.Line line:
-                        if (!started)
-                        {
-                            start = ToXPoint(line.From);
-                            started = true;
-                        }
-                        xPath.AddLine(ToXPoint(line.From), ToXPoint(line.To));
-                        break;
-                    case PdfSubpath.BezierCurve curve:
-                        xPath.AddBezier(
-                            ToXPoint(curve.StartPoint),
-                            ToXPoint(curve.FirstControlPoint),
-                            ToXPoint(curve.SecondControlPoint),
-                            ToXPoint(curve.EndPoint));
-                        break;
-                    case PdfSubpath.Close:
-                        xPath.CloseFigure();
-                        break;
+                        return ((line.From, line.To));
                 }
             }
         }
 
+        return null;
+    }
+
+    private static void DrawOverlayLine(XGraphics gfx, double pageHeight, PdfPoint start, PdfPoint end, string? strokeHex, PdfPath sourcePath)
+    {
         var strokeColor = ParseColor(strokeHex);
-        var fillColor = ParseColor(fillHex);
-        var lineWidth = (double)(sourcePath.IsStroked ? sourcePath.LineWidth : 0.5m);
-
-        if (fillColor is XColor fill && sourcePath.IsFilled)
+        if (strokeColor is null)
         {
-            gfx.DrawPath(new XPen(fill, 0), new XSolidBrush(fill), xPath);
+            return;
         }
 
-        if (strokeColor is XColor stroke && sourcePath.IsStroked)
-        {
-            var pen = new XPen(stroke, lineWidth);
-            gfx.DrawPath(pen, xPath);
-        }
+        var pen = new XPen(strokeColor.Value, (double)(sourcePath.IsStroked ? sourcePath.LineWidth : 0.5m));
+        var from = TransformPoint(start, pageHeight);
+        var to = TransformPoint(end, pageHeight);
+        gfx.DrawLine(pen, from, to);
     }
 
     private static XColor? ParseColor(string? hex)
@@ -188,5 +141,6 @@ public sealed class PdfEditor
     private static string NormalizeHex(string hex) =>
         hex.StartsWith("#", StringComparison.Ordinal) ? hex : $"#{hex}";
 
-    private static XPoint ToXPoint(PdfPoint point) => new(point.X, point.Y);
+    private static XPoint TransformPoint(PdfPoint point, double pageHeight) =>
+        new(point.X, pageHeight - point.Y);
 }

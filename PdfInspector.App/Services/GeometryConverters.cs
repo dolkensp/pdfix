@@ -10,8 +10,6 @@ internal static class GeometryConverters
     public static BoundingBox ToBoundingBox(PdfRectangle rectangle) =>
         new(rectangle.Left, rectangle.Bottom, rectangle.Width, rectangle.Height);
 
-    public static (double x, double y) ToTuple(PdfPoint point) => (point.X, point.Y);
-
     public static PdfPoint ToPoint((double x, double y) tuple) => new(tuple.x, tuple.y);
 
     public static IEnumerable<PdfSubpath.IPathCommand> AdjustLineEndpoints(
