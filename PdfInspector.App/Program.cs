@@ -30,7 +30,7 @@ public static class Program
 
         try
         {
-            var report = inspector.Inspect(options.PdfPath, options.Pages, options.VectorBounds);
+            var report = inspector.Inspect(options.PdfPath, options.Pages, options.VectorBounds, options.StrokeColorFilter);
             RenderSummary(report, options);
 
             if (!string.IsNullOrWhiteSpace(options.OutputPath))
@@ -59,6 +59,11 @@ public static class Program
         if (options.VectorBounds != null)
         {
             Console.WriteLine($"Vector bounding filter: {options.VectorBounds}");
+        }
+
+        if (options.StrokeColorFilter != null)
+        {
+            Console.WriteLine($"Stroke color filter: {options.StrokeColorFilter}");
         }
 
         Console.WriteLine();
@@ -109,13 +114,15 @@ public static class Program
         string PdfPath,
         IReadOnlyCollection<int>? Pages,
         string? OutputPath,
-        BoundingBoxFilter? VectorBounds)
+        BoundingBoxFilter? VectorBounds,
+        ColorFilter? StrokeColorFilter)
     {
         public static ParseResult Parse(string[] args)
         {
             string? pdfPath = null;
             string? outputPath = null;
             BoundingBoxFilter? vectorBounds = null;
+            ColorFilter? strokeColorFilter = null;
             IReadOnlyCollection<int>? pages = null;
 
             for (var i = 0; i < args.Length; i++)
@@ -159,6 +166,18 @@ public static class Program
                         }
 
                         break;
+                    case "--line-color":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--line-color requires a hex color like #ffcccc.");
+                        }
+
+                        if (!ColorFilter.TryParse(args[++i], out strokeColorFilter, out var colorError))
+                        {
+                            return new ParseResult(false, null, colorError);
+                        }
+
+                        break;
                     default:
                         if (value.StartsWith("--", StringComparison.Ordinal))
                         {
@@ -175,7 +194,7 @@ public static class Program
                 return new ParseResult(false, null, "Please provide a PDF file path.");
             }
 
-            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds);
+            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter);
             return new ParseResult(true, options, null);
         }
 

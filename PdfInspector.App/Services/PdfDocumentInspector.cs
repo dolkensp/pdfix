@@ -13,7 +13,7 @@ namespace PdfInspector.App.Services;
 
 public sealed class PdfDocumentInspector
 {
-    public DocumentComponents Inspect(string pdfPath, IReadOnlyCollection<int>? requestedPages, BoundingBoxFilter? vectorBounds)
+    public DocumentComponents Inspect(string pdfPath, IReadOnlyCollection<int>? requestedPages, BoundingBoxFilter? vectorBounds, ColorFilter? strokeColorFilter)
     {
         if (!File.Exists(pdfPath))
         {
@@ -21,7 +21,7 @@ public sealed class PdfDocumentInspector
         }
 
         using var document = PdfDocument.Open(pdfPath);
-        var pages = BuildPageList(document, requestedPages, vectorBounds);
+        var pages = BuildPageList(document, requestedPages, vectorBounds, strokeColorFilter);
 
         return new DocumentComponents(
             FileName: Path.GetFileName(pdfPath),
@@ -31,7 +31,7 @@ public sealed class PdfDocumentInspector
             Pages: pages);
     }
 
-    private static IReadOnlyList<PageComponents> BuildPageList(PdfDocument document, IReadOnlyCollection<int>? requestedPages, BoundingBoxFilter? vectorBounds)
+    private static IReadOnlyList<PageComponents> BuildPageList(PdfDocument document, IReadOnlyCollection<int>? requestedPages, BoundingBoxFilter? vectorBounds, ColorFilter? strokeColorFilter)
     {
         var allowedPages = requestedPages ?? Enumerable.Range(1, document.NumberOfPages).ToArray();
         var invalidPage = allowedPages.FirstOrDefault(p => p < 1 || p > document.NumberOfPages);
@@ -44,17 +44,17 @@ public sealed class PdfDocumentInspector
         foreach (var number in allowedPages.OrderBy(p => p))
         {
             var page = document.GetPage(number);
-            result.Add(BuildPageComponents(page, vectorBounds));
+            result.Add(BuildPageComponents(page, vectorBounds, strokeColorFilter));
         }
 
         return result;
     }
 
-    private static PageComponents BuildPageComponents(Page page, BoundingBoxFilter? vectorBounds)
+    private static PageComponents BuildPageComponents(Page page, BoundingBoxFilter? vectorBounds, ColorFilter? strokeColorFilter)
     {
         var words = ExtractWords(page);
         var images = ExtractImages(page);
-        var paths = ExtractPaths(page, vectorBounds);
+        var paths = ExtractPaths(page, vectorBounds, strokeColorFilter);
         var operationCounts = SummarizeOperations(page);
 
         return new PageComponents(
@@ -124,7 +124,7 @@ public sealed class PdfDocumentInspector
         return result;
     }
 
-    private static IReadOnlyList<VectorPathComponent> ExtractPaths(Page page, BoundingBoxFilter? boundsFilter)
+    private static IReadOnlyList<VectorPathComponent> ExtractPaths(Page page, BoundingBoxFilter? boundsFilter, ColorFilter? strokeColorFilter)
     {
         var result = new List<VectorPathComponent>();
         var paths = page.ExperimentalAccess.Paths ?? Array.Empty<PdfPath>();
@@ -142,6 +142,14 @@ public sealed class PdfDocumentInspector
                 }
             }
 
+            if (strokeColorFilter != null && (!path.IsStroked || !strokeColorFilter.Matches(path.StrokeColor)))
+            {
+                continue;
+            }
+
+            var strokeHex = ColorUtilities.ToHex(path.StrokeColor);
+            var fillHex = ColorUtilities.ToHex(path.FillColor);
+
             result.Add(new VectorPathComponent(
                 Index: i,
                 Bounds: bounds is { } rect ? ToBoundingBox(rect) : null,
@@ -149,7 +157,9 @@ public sealed class PdfDocumentInspector
                 IsFilled: path.IsFilled,
                 IsStroked: path.IsStroked,
                 FillColor: path.FillColor?.ToString(),
+                FillColorHex: fillHex,
                 StrokeColor: path.StrokeColor?.ToString(),
+                StrokeColorHex: strokeHex,
                 LineWidth: path.IsStroked ? path.LineWidth : null,
                 DashPattern: path.LineDashPattern?.ToString(),
                 LineCap: path.LineCapStyle.ToString(),

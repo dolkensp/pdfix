@@ -16,6 +16,7 @@ Options:
 
 - `--pages 1,3-4` – restricts inspection to specific pages.
 - `--vector-bbox minX,minY,maxX,maxY` – only include vector paths whose bounds intersect the provided rectangle (PDF coordinate space).
+- `--line-color #ffcccc` – only include stroked vector paths that match the provided hex color (RGB, with a small tolerance).
 - `--output <file>` – write the full JSON report to a file.
 
 ## Output structure
