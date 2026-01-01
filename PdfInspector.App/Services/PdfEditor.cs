@@ -189,5 +189,11 @@ public sealed class PdfEditor
     }
 
     private static XPoint TransformPoint(PdfPoint point, double pageWidth, double pageHeight, int rotationDegrees) =>
-        new(point.X, pageHeight - point.Y);
+        rotationDegrees switch
+        {
+            90 => new XPoint(point.Y, point.X),
+            180 => new XPoint(pageWidth - point.X, point.Y),
+            270 => new XPoint(pageHeight - point.Y, pageWidth - point.X),
+            _ => new XPoint(point.X, pageHeight - point.Y)
+        };
 }
