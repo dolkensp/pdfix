@@ -188,30 +188,6 @@ public sealed class PdfEditor
         return $"#{r:X2}{g:X2}{b:X2}";
     }
 
-    private static XPoint TransformPoint(PdfPoint point, double pageWidth, double pageHeight, int rotationDegrees)
-    {
-        var normalized = ((rotationDegrees % 360) + 360) % 360;
-        double ux, uy;
-        switch (normalized)
-        {
-            case 90:
-                ux = point.Y;
-                uy = pageWidth - point.X;
-                break;
-            case 180:
-                ux = pageWidth - point.X;
-                uy = pageHeight - point.Y;
-                break;
-            case 270:
-                ux = pageHeight - point.Y;
-                uy = point.X;
-                break;
-            default:
-                ux = point.X;
-                uy = point.Y;
-                break;
-        }
-
-        return new XPoint(ux, pageHeight - uy);
-    }
+    private static XPoint TransformPoint(PdfPoint point, double pageWidth, double pageHeight, int rotationDegrees) =>
+        new(point.X, pageHeight - point.Y);
 }
