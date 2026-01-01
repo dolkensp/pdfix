@@ -63,7 +63,7 @@ public sealed class PdfEditor
             var finalEnd = newEnd.HasValue ? GeometryConverters.ToPoint(newEnd.Value) : end;
 
             using var gfx = XGraphics.FromPdfPage(sharpPage, XGraphicsPdfPageOptions.Append);
-            DrawOverlayLine(gfx, sharpPage.Height, finalStart, finalEnd, strokeHex, path);
+            DrawOverlayLine(gfx, sharpPage.Width, sharpPage.Height, pigPage.Rotation.Value, finalStart, finalEnd, strokeHex, path);
         }
 
         target.Save(outputPath);
@@ -99,7 +99,7 @@ public sealed class PdfEditor
                 }
 
                 var (start, end) = endpoints.Value;
-                DrawOverlayLine(gfx, sharpPage.Height, start, end, strokeHex, path);
+                DrawOverlayLine(gfx, sharpPage.Width, sharpPage.Height, pigPage.Rotation.Value, start, end, strokeHex, path);
                 Console.WriteLine($"Page {pageNumber}, Path {i}, Stroke {strokeHex}");
             }
         }
@@ -130,7 +130,7 @@ public sealed class PdfEditor
         return null;
     }
 
-    private static void DrawOverlayLine(XGraphics gfx, double pageHeight, PdfPoint start, PdfPoint end, string? strokeHex, PdfPath sourcePath)
+    private static void DrawOverlayLine(XGraphics gfx, double pageWidth, double pageHeight, int rotation, PdfPoint start, PdfPoint end, string? strokeHex, PdfPath sourcePath)
     {
         var strokeColor = ParseColor(strokeHex);
         if (strokeColor is null)
@@ -139,8 +139,8 @@ public sealed class PdfEditor
         }
 
         var pen = new XPen(strokeColor.Value, (double)(sourcePath.IsStroked ? sourcePath.LineWidth : 0.5m));
-        var from = TransformPoint(start, pageHeight);
-        var to = TransformPoint(end, pageHeight);
+        var from = TransformPoint(start, pageWidth, pageHeight, rotation);
+        var to = TransformPoint(end, pageWidth, pageHeight, rotation);
         gfx.DrawLine(pen, from, to);
     }
 
@@ -188,6 +188,30 @@ public sealed class PdfEditor
         return $"#{r:X2}{g:X2}{b:X2}";
     }
 
-    private static XPoint TransformPoint(PdfPoint point, double pageHeight) =>
-        new(point.X, pageHeight - point.Y);
+    private static XPoint TransformPoint(PdfPoint point, double pageWidth, double pageHeight, int rotationDegrees)
+    {
+        var normalized = ((rotationDegrees % 360) + 360) % 360;
+        double ux, uy;
+        switch (normalized)
+        {
+            case 90:
+                ux = point.Y;
+                uy = pageWidth - point.X;
+                break;
+            case 180:
+                ux = pageWidth - point.X;
+                uy = pageHeight - point.Y;
+                break;
+            case 270:
+                ux = pageHeight - point.Y;
+                uy = point.X;
+                break;
+            default:
+                ux = point.X;
+                uy = point.Y;
+                break;
+        }
+
+        return new XPoint(ux, pageHeight - uy);
+    }
 }
