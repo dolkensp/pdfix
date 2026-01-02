@@ -57,7 +57,22 @@ public static class Program
                 SaveReport(report, options.OutputPath!);
             }
 
-            if (options.EditPathId.HasValue || options.EditStrokeColor != null || options.NewLineStart.HasValue || options.NewLineEnd.HasValue)
+            var removalRequested = options.RemovePathIds is { Count: > 0 };
+            var editRequested = options.EditPathId.HasValue || options.EditStrokeColor != null || options.NewLineStart.HasValue || options.NewLineEnd.HasValue;
+
+            if (removalRequested && !options.EditPageNumber.HasValue)
+            {
+                Console.Error.WriteLine("Path removal requires --edit-page to select a page.");
+                return 1;
+            }
+
+            if (options.EditPathId.HasValue && !options.EditPageNumber.HasValue)
+            {
+                Console.Error.WriteLine("Editing requires --edit-page to select a page.");
+                return 1;
+            }
+
+            if (editRequested || removalRequested)
             {
                 if (string.IsNullOrWhiteSpace(options.OutputPdfPath))
                 {
@@ -71,6 +86,7 @@ public static class Program
                     options.EditPageNumber,
                     options.EditPathId,
                     options.EditStrokeColor,
+                    options.RemovePathIds,
                     options.NewLineStart,
                     options.NewLineEnd);
 
@@ -192,6 +208,7 @@ public static class Program
         int? EditPageNumber,
         int? EditPathId,
         string? EditStrokeColor,
+        IReadOnlyCollection<int>? RemovePathIds,
         (double x, double y)? NewLineStart,
         (double x, double y)? NewLineEnd,
         string? OutputPdfPath,
@@ -208,6 +225,7 @@ public static class Program
             int? editPage = null;
             int? editPathId = null;
             string? editStroke = null;
+            IReadOnlyCollection<int>? removePathIds = null;
             (double x, double y)? newStart = null;
             (double x, double y)? newEnd = null;
             string? outputPdf = null;
@@ -291,6 +309,18 @@ public static class Program
 
                         editPathId = pathId;
                         break;
+                    case "--remove-paths":
+                        if (i + 1 >= args.Length)
+                        {
+                            return new ParseResult(false, null, "--remove-paths requires one or more comma-separated path ids.");
+                        }
+
+                        if (!TryParsePathList(args[++i], out removePathIds, out var removeError))
+                        {
+                            return new ParseResult(false, null, removeError ?? "--remove-paths requires one or more comma-separated path ids.");
+                        }
+
+                        break;
                     case "--edit-stroke-color":
                         if (i + 1 >= args.Length)
                         {
@@ -356,7 +386,7 @@ public static class Program
                 return new ParseResult(false, null, "Please provide a PDF file path.");
             }
 
-            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, newStart, newEnd, outputPdf, debugRandomize, findColor);
+            var options = new CommandLineOptions(pdfPath, pages, outputPath, vectorBounds, strokeColorFilter, editPage, editPathId, editStroke, removePathIds, newStart, newEnd, outputPdf, debugRandomize, findColor);
             return new ParseResult(true, options, null);
         }
 
@@ -375,6 +405,33 @@ public static class Program
             }
 
             point = (x, y);
+            return true;
+        }
+
+        private static bool TryParsePathList(string value, out IReadOnlyCollection<int>? ids, out string? error)
+        {
+            ids = null;
+            error = null;
+            var set = new HashSet<int>();
+
+            foreach (var segment in value.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) || id < 0)
+                {
+                    error = "Path ids must be non-negative integers.";
+                    return false;
+                }
+
+                set.Add(id);
+            }
+
+            if (set.Count == 0)
+            {
+                error = "At least one path id is required.";
+                return false;
+            }
+
+            ids = set;
             return true;
         }
 
