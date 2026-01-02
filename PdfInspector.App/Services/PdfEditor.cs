@@ -9,7 +9,10 @@ using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Graphics;
 using PdfSharpCore.Drawing;
 using PdfSharpCore.Pdf;
+using PdfSharpCore.Pdf.Advanced;
 using PdfSharpCore.Pdf.IO;
+using PdfSharpCore.Pdf.Content;
+using PdfSharpCore.Pdf.Content.Objects;
 
 namespace PdfInspector.App.Services;
 
@@ -19,10 +22,10 @@ public sealed class PdfEditor
             string inputPath,
             string outputPath,
             int? targetPage,
-        int? targetPathId,
-        string? newStrokeColorHex,
-        (double x, double y)? newStart,
-        (double x, double y)? newEnd)
+            int? targetPathId,
+            string? newStrokeColorHex,
+            (double x, double y)? newStart,
+            (double x, double y)? newEnd)
     {
         if (string.IsNullOrWhiteSpace(outputPath))
         {
@@ -61,6 +64,8 @@ public sealed class PdfEditor
 
             var finalStart = newStart.HasValue ? GeometryConverters.ToPoint(newStart.Value) : start;
             var finalEnd = newEnd.HasValue ? GeometryConverters.ToPoint(newEnd.Value) : end;
+
+            RemovePath(sharpPage, targetPathId.Value);
 
             using var gfx = XGraphics.FromPdfPage(sharpPage, XGraphicsPdfPageOptions.Append);
             DrawOverlayLine(gfx, sharpPage.Width, sharpPage.Height, pigPage.Rotation.Value, finalStart, finalEnd, strokeHex, path);
@@ -130,6 +135,100 @@ public sealed class PdfEditor
         return null;
     }
 
+    private static void RemovePath(PdfPage page, int pathIndexToRemove)
+    {
+        var content = ContentReader.ReadContent(page);
+        var filtered = new CSequence();
+        var pathBuffer = new List<CObject>();
+        var stateBuffer = new List<CObject>();
+        var trackingPath = false;
+        var currentPathIndex = -1;
+
+        void FlushStateBuffer()
+        {
+            foreach (var item in stateBuffer)
+            {
+                filtered.Add(item);
+            }
+
+            stateBuffer.Clear();
+        }
+
+        foreach (var element in content)
+        {
+            if (element is COperator op)
+            {
+                var name = op.OpCode.OpCodeName;
+
+                if (!trackingPath && IsStateOperator(name))
+                {
+                    stateBuffer.Add(op);
+                    continue;
+                }
+
+                if (!trackingPath && IsPathConstructionOperator(name))
+                {
+                    trackingPath = true;
+                    foreach (var item in stateBuffer)
+                    {
+                        pathBuffer.Add(item);
+                    }
+
+                    stateBuffer.Clear();
+                    pathBuffer.Add(op);
+                    continue;
+                }
+
+                if (trackingPath)
+                {
+                    pathBuffer.Add(op);
+
+                    if (IsPathTerminatingOperator(name))
+                    {
+                        currentPathIndex++;
+                        if (currentPathIndex != pathIndexToRemove)
+                        {
+                            foreach (var item in pathBuffer)
+                            {
+                                filtered.Add(item);
+                            }
+                        }
+
+                        pathBuffer.Clear();
+                        trackingPath = false;
+                    }
+
+                    continue;
+                }
+
+                FlushStateBuffer();
+                filtered.Add(op);
+                continue;
+            }
+
+            if (trackingPath)
+            {
+                pathBuffer.Add(element);
+            }
+            else
+            {
+                FlushStateBuffer();
+                filtered.Add(element);
+            }
+        }
+
+        if (pathBuffer.Count > 0)
+        {
+            foreach (var item in pathBuffer)
+            {
+                filtered.Add(item);
+            }
+        }
+
+        FlushStateBuffer();
+        page.Contents.ReplaceContent(filtered);
+    }
+
     private static void DrawOverlayLine(XGraphics gfx, double pageWidth, double pageHeight, int rotation, PdfPoint start, PdfPoint end, string? strokeHex, PdfPath sourcePath)
     {
         var strokeColor = ParseColor(strokeHex);
@@ -196,4 +295,34 @@ public sealed class PdfEditor
             270 => new XPoint(pageHeight - point.Y, pageWidth - point.X),
             _ => new XPoint(point.X, pageHeight - point.Y)
         };
+
+    private static bool IsPathConstructionOperator(OpCodeName op) =>
+        op is OpCodeName.m or OpCodeName.l or OpCodeName.c or OpCodeName.v or OpCodeName.y or OpCodeName.h or OpCodeName.re;
+
+    private static bool IsPathTerminatingOperator(OpCodeName op) =>
+        op is OpCodeName.S or OpCodeName.s or OpCodeName.f or OpCodeName.F or OpCodeName.fx or OpCodeName.B or OpCodeName.Bx or OpCodeName.b or OpCodeName.bx or OpCodeName.n or OpCodeName.W or OpCodeName.Wx;
+
+    private static bool IsStateOperator(OpCodeName op) =>
+        op is OpCodeName.q or OpCodeName.Q
+            or OpCodeName.cm
+            or OpCodeName.w
+            or OpCodeName.J
+            or OpCodeName.j
+            or OpCodeName.M
+            or OpCodeName.d
+            or OpCodeName.ri
+            or OpCodeName.i
+            or OpCodeName.gs
+            or OpCodeName.CS
+            or OpCodeName.cs
+            or OpCodeName.SC
+            or OpCodeName.SCN
+            or OpCodeName.sc
+            or OpCodeName.scn
+            or OpCodeName.G
+            or OpCodeName.g
+            or OpCodeName.RG
+            or OpCodeName.rg
+            or OpCodeName.K
+            or OpCodeName.k;
 }
