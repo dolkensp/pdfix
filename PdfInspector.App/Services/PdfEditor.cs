@@ -324,7 +324,5 @@ public sealed class PdfEditor
             or OpCodeName.RG
             or OpCodeName.rg
             or OpCodeName.K
-            or OpCodeName.k
-            or OpCodeName.CA
-            or OpCodeName.ca;
+            or OpCodeName.k;
 }
